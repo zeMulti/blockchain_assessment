@@ -1,6 +1,9 @@
 import sys
 import hashlib
 import json
+import os
+import pandas as pd
+from datetime import datetime
 
 from time import time
 from uuid import uuid4
@@ -13,7 +16,7 @@ import requests
 from urllib.parse import urlparse
 
 class Blockchain(object):
-    difficulty_target= "0000"
+    difficulty_target= "00000"
 
     def hash_block(self, block):
         block_encoded= json.dumps(block, sort_keys=True).encode()
@@ -128,6 +131,29 @@ app = FastAPI()
 node_identifier= str(uuid4()).replace('-', '')
 blockchain= Blockchain()
 
+def log_result(duration: float, action: str):
+    filename = "log.csv"
+
+    # New record
+    record = {
+        "timestamp": datetime.now().isoformat(),
+        "action": action,
+        "duration": duration,
+        "difficulty_target": len(blockchain.difficulty_target),
+        "transactions_count": len(blockchain.current_transactions),
+        "nodes_count": len(blockchain.nodes),
+        "blockchain_length": len(blockchain.chain)
+    }
+    
+    # If file exists, append; otherwise create
+    if os.path.isfile(filename):
+        df = pd.read_csv(filename)
+        df = pd.concat([df, pd.DataFrame([record])], ignore_index=True)
+    else:
+        df = pd.DataFrame([record])
+
+    df.to_csv(filename, index=False)
+
 #@app.route('/blockchain', methods=['GET'])
 @app.get('/blockchain')
 def full_chain():
@@ -148,6 +174,8 @@ def mine_block():
     block = blockchain.append_block(nonce, last_block_hash)
 
     mining_duration = round(time() - start_time, 4)
+
+    log_result(mining_duration, action="mining")
 
     response = {
         'message': "New Block Mined",
@@ -175,6 +203,8 @@ async def new_transaction(sender: str,
     index = blockchain.add_transactions(sender, recipient, amount)
     duration = round(time() - start_time, 4)
 
+    log_result(duration, action="transaction")
+    
     response = {
         'message': f'Transaction will be added to block {index}',
         'transaction_add_time_seconds': duration
@@ -209,6 +239,8 @@ def sync():
     updated = blockchain.update_blockchain()
     sync_time = round(time() - start_time, 4)
 
+    log_result(sync_time, action="sync")
+
     if updated:
         response = {
             'message': 'The blockchain has been updated to the latest',
@@ -221,11 +253,8 @@ def sync():
             'blockchain': blockchain.chain,
             'sync_time_seconds': sync_time
         }
+        
     return response
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
-
-
